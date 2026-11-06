@@ -59,6 +59,25 @@ Critical alerts use Pushover's emergency priority (`2`). They repeat every
 
 ## 2. Installing into a host app
 
+### Checklist for each app
+
+- [ ] Add the `:notifier` dependency.
+- [ ] Read the secrets in `config/runtime.exs`.
+- [ ] **Add `notifications: 5` to the app's Oban `queues:`.** Without it, jobs
+      are inserted but never run, so alerts silently never arrive.
+- [ ] Set the secrets on Fly:
+
+| Secret               | Needed for | Where it comes from                         |
+|----------------------|------------|---------------------------------------------|
+| `TELEGRAM_BOT_TOKEN` | Telegram   | @BotFather, when you create the bot         |
+| `TELEGRAM_CHAT_ID`   | Telegram   | `getUpdates`, after you message the bot     |
+| `PUSHOVER_TOKEN`     | Pushover   | the application you create on pushover.net  |
+| `PUSHOVER_USER`      | Pushover   | your user key on the pushover.net dashboard |
+
+Telegram alone needs only the first two. The Pushover pair is optional; when
+it's unset, Pushover is skipped with a logged warning, and `:warning` and
+`:critical` alerts go to Telegram only.
+
 ### Dependency
 
 ```elixir
@@ -116,6 +135,16 @@ In `:oban` mode, `notify/4` raises if that Oban instance isn't running. A
 misconfigured alert path should fail loudly rather than go silent.
 
 ### Fly.io secrets
+
+Telegram only:
+
+```sh
+fly secrets set \
+  TELEGRAM_BOT_TOKEN="123456789:AA-your-bot-token-here" \
+  TELEGRAM_CHAT_ID="your-chat-id"
+```
+
+Telegram and Pushover:
 
 ```sh
 fly secrets set \
@@ -263,6 +292,41 @@ end, nil)
 ```
 
 ---
+
+## Sending a real test message
+
+To check that your bot token and chat ID work end to end, send a real
+notification to your phone from a checkout of this repo:
+
+```sh
+export TELEGRAM_BOT_TOKEN="123456789:AA-your-bot-token-here"
+export TELEGRAM_CHAT_ID="your-chat-id"
+
+mix run scripts/send_test_message.exs            # :info (default)
+mix run scripts/send_test_message.exs warning
+mix run scripts/send_test_message.exs critical
+```
+
+If your credentials are in a `.env` file (`KEY=value` lines; it's gitignored),
+load them with `set -a; source .env; set +a`.
+
+The script sends synchronously and prints each channel's result:
+
+```text
+Sending info test notification...
+  telegram: ok
+Done. Check your phone.
+```
+
+It exits with status 1 if a variable is missing or a channel fails. For
+example, a wrong token shows `{:cancel, {:http_error, 401, ...}}`, and a chat
+the bot can't reach shows `{:cancel, {:http_error, 400, ...}}`, which usually
+means you haven't messaged the bot first.
+
+`PUSHOVER_TOKEN` and `PUSHOVER_USER` are optional. When they're set, `warning`
+and `critical` also go to Pushover. **`critical` uses emergency priority, so
+your phone will keep alerting every 60 seconds until you acknowledge it in the
+Pushover app.**
 
 ## Testing in your app
 
