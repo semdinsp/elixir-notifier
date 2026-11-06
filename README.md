@@ -264,6 +264,41 @@ end, nil)
 
 ---
 
+## Sending a real test message
+
+To check that your bot token and chat ID work end to end, send a real
+notification to your phone from a checkout of this repo:
+
+```sh
+export TELEGRAM_BOT_TOKEN="123456789:AA-your-bot-token-here"
+export TELEGRAM_CHAT_ID="your-chat-id"
+
+mix run scripts/send_test_message.exs            # :info (default)
+mix run scripts/send_test_message.exs warning
+mix run scripts/send_test_message.exs critical
+```
+
+If your credentials are in a `.env` file (`KEY=value` lines; it's gitignored),
+load them with `set -a; source .env; set +a`.
+
+The script sends synchronously and prints each channel's result:
+
+```text
+Sending info test notification...
+  telegram: ok
+Done. Check your phone.
+```
+
+It exits with status 1 if a variable is missing or a channel fails. For
+example, a wrong token shows `{:cancel, {:http_error, 401, ...}}`, and a chat
+the bot can't reach shows `{:cancel, {:http_error, 400, ...}}`, which usually
+means you haven't messaged the bot first.
+
+`PUSHOVER_TOKEN` and `PUSHOVER_USER` are optional. When they're set, `warning`
+and `critical` also go to Pushover. **`critical` uses emergency priority, so
+your phone will keep alerting every 60 seconds until you acknowledge it in the
+Pushover app.**
+
 ## Testing in your app
 
 Use `mode: :sync` with a [`Req.Test`](https://hexdocs.pm/req/Req.Test.html) stub:
