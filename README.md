@@ -59,6 +59,25 @@ Critical alerts use Pushover's emergency priority (`2`). They repeat every
 
 ## 2. Installing into a host app
 
+### Checklist for each app
+
+- [ ] Add the `:notifier` dependency.
+- [ ] Read the secrets in `config/runtime.exs`.
+- [ ] **Add `notifications: 5` to the app's Oban `queues:`.** Without it, jobs
+      are inserted but never run, so alerts silently never arrive.
+- [ ] Set the secrets on Fly:
+
+| Secret               | Needed for | Where it comes from                         |
+|----------------------|------------|---------------------------------------------|
+| `TELEGRAM_BOT_TOKEN` | Telegram   | @BotFather, when you create the bot         |
+| `TELEGRAM_CHAT_ID`   | Telegram   | `getUpdates`, after you message the bot     |
+| `PUSHOVER_TOKEN`     | Pushover   | the application you create on pushover.net  |
+| `PUSHOVER_USER`      | Pushover   | your user key on the pushover.net dashboard |
+
+Telegram alone needs only the first two. The Pushover pair is optional; when
+it's unset, Pushover is skipped with a logged warning, and `:warning` and
+`:critical` alerts go to Telegram only.
+
 ### Dependency
 
 ```elixir
@@ -116,6 +135,16 @@ In `:oban` mode, `notify/4` raises if that Oban instance isn't running. A
 misconfigured alert path should fail loudly rather than go silent.
 
 ### Fly.io secrets
+
+Telegram only:
+
+```sh
+fly secrets set \
+  TELEGRAM_BOT_TOKEN="123456789:AA-your-bot-token-here" \
+  TELEGRAM_CHAT_ID="your-chat-id"
+```
+
+Telegram and Pushover:
 
 ```sh
 fly secrets set \
