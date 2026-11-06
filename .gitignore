@@ -26,3 +26,7 @@ notifier-*.tar
 # OS / editor noise
 .DS_Store
 .elixir_ls/
+
+# Local secrets
+.env
+.env.*
