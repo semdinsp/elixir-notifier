@@ -2,7 +2,7 @@ defmodule Notifier.MixProject do
   use Mix.Project
 
   @version "0.1.0"
-  @source_url "https://github.com/semdinsp/notifier"
+  @source_url "https://github.com/semdinsp/elixir-notifier"
 
   def project do
     [
