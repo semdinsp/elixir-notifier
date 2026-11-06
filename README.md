@@ -65,8 +65,8 @@ Critical alerts use Pushover's emergency priority (`2`). They repeat every
 # mix.exs
 def deps do
   [
-    {:notifier, github: "semdinsp/notifier"}
-    # during development: {:notifier, path: "../notifier"}
+    {:notifier, github: "semdinsp/elixir-notifier"}
+    # during development: {:notifier, path: "../elixir_notify"}
   ]
 end
 ```
