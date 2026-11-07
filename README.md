@@ -203,29 +203,88 @@ config :notifier, channels: %{slack: MyApp.SlackChannel}
 
 ### Delivery modes
 
-| mode      | what happens                                          | returns |
-|-----------|-------------------------------------------------------|---------|
-| `:oban`   | one `Notifier.Worker` job per channel (default)       | `{:ok, [%Oban.Job{}]}` |
-| `:direct` | fire-and-forget under `Notifier.TaskSupervisor`; no retries | `{:ok, [pid]}` |
-| `:sync`   | delivered inline                                      | `{:ok, [telegram: :ok, pushover: {:error, ...}]}` |
+Notifier delivers in one of three modes. The default is `:oban`. Set a
+different default with `config :notifier, mode: ...`, or pass `mode:` to a
+single call.
 
-**Apps without Oban** set the mode once:
+| | `:oban` (default) | `:direct` | `:sync` |
+|---|---|---|---|
+| What `notify/4` does | inserts one `Notifier.Worker` job per channel | starts one task per channel under `Notifier.TaskSupervisor` | sends each channel's HTTP request before returning |
+| Blocks the caller? | no, only for the job insert (a few ms) | no | **yes**, up to the 15 s request timeout per channel |
+| Retries | yes, up to 5 attempts with backoff | no | no |
+| De-duplication (`:unique`) | yes, 5 minutes by default | no | no |
+| Needs a database / Oban | yes | no | no |
+| Returns | `{:ok, [%Oban.Job{}]}` | `{:ok, [pid]}` | `{:ok, [telegram: :ok, pushover: {:error, ...}]}` |
+
+In `:oban` mode the HTTP call happens later in an Oban worker, so a slow or
+unreachable Telegram or Pushover never holds up a request, a LiveView or a job.
+You don't need to wrap `notify/4` in a `Task`.
+
+#### Which mode should I use?
+
+- **`:oban`** for almost everything in an app that already runs Oban. You get
+  retries, de-duplication, and a record of every alert in `oban_jobs`.
+- **`:direct`** in two cases:
+  - an app that doesn't run Oban (set `config :notifier, mode: :direct` once);
+  - an alert about the database or Oban itself. See below.
+- **`:sync`** only in scripts, release tasks, IEx and tests, where you want
+  the result and don't mind waiting. Avoid it in request paths.
+
+#### Alerts about the database itself
+
+`:oban` mode has to insert a row to send anything. If the database is down,
+the insert fails, and so does an alert like "database unreachable". Send that
+kind of alert with `:direct`, which doesn't touch the database:
 
 ```elixir
-config :notifier, mode: :direct
+rescue
+  error in DBConnection.ConnectionError ->
+    Notifier.notify(:critical, "Database unreachable", Exception.message(error), mode: :direct)
+    reraise error, __STACKTRACE__
 ```
 
-You don't need to add anything to your supervision tree. Notifier's own OTP
-application always starts a single `Task.Supervisor` named
+The same applies if Oban isn't running. In `:oban` mode, `notify/4` raises
+when the configured Oban instance (`:oban_name`) isn't started, rather than
+silently dropping the alert.
+
+#### Inside a transaction
+
+In `:oban` mode, a `notify/4` call inside `Repo.transaction/2` (or an
+`Ecto.Multi`) inserts its jobs within that transaction. If the transaction
+rolls back, the alert is rolled back with it:
+
+```elixir
+Repo.transaction(fn ->
+  order = Repo.insert!(changeset)
+  Notifier.notify(:info, "New order", "##{order.id}")  # only sent if the order commits
+end)
+```
+
+Usually that's what you want: no "order placed" alert for an order that
+wasn't saved. To alert about the failure itself, notify after the transaction
+returns:
+
+```elixir
+case Repo.transaction(fun) do
+  {:ok, result} -> result
+  {:error, reason} -> Notifier.notify(:warning, "Order failed", inspect(reason))
+end
+```
+
+`:direct` and `:sync` aren't transactional. They send right away even if the
+transaction later rolls back.
+
+#### Setup notes
+
+You don't need to add anything to your supervision tree for `:direct`.
+Notifier's own OTP application always starts a single `Task.Supervisor` named
 `Notifier.TaskSupervisor`. It's one idle process when unused, which is simpler
 and less error-prone than asking every host app to add it or starting it
 conditionally based on config.
 
-`:sync` is useful in scripts, release tasks and tests:
-
-```elixir
-{:ok, results} = Notifier.notify(:info, "Backfill done", "42 rows", mode: :sync)
-```
+`:direct` tasks run independently of the caller. A failed delivery is logged
+and emits a `[:notifier, :deliver, :stop]` event with the error in `result`,
+but it isn't retried.
 
 ### Uniqueness (don't page me 50 times)
 
